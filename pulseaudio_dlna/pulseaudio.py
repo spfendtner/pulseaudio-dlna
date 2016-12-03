@@ -486,7 +486,7 @@ class PulseWatcher(PulseAudio):
 
     def __init__(self, bridges_shared, message_queue, disable_switchback=False,
                  disable_device_stop=False, disable_auto_reconnect=True,
-                 cover_mode='application'):
+                 cover_mode='application', combined_sink_count=None):
         PulseAudio.__init__(self)
 
         self.bridges = []
@@ -494,6 +494,9 @@ class PulseWatcher(PulseAudio):
 
         self.message_queue = message_queue
         self.blocked_devices = []
+        self.combined_sink = False
+        self.combined_sink_slaves = []
+        self.combined_sink_count = combined_sink_count
         self.signal_timers = {}
         self.is_terminating = False
         self.cover_mode = pulseaudio_dlna.covermodes.MODES[cover_mode]()
@@ -564,6 +567,9 @@ class PulseWatcher(PulseAudio):
         self.bridges_shared.extend(bridges_copy)
 
     def cleanup(self):
+        if self.combined_sink:
+            logger.info('Remove "{}" sink ...'.format(self.combined_sink.name))
+            self.delete_null_sink(self.combined_sink.module.index)
         for bridge in self.bridges:
             logger.info('Remove "{}" sink ...'.format(bridge.sink.name))
             self.delete_null_sink(bridge.sink.module.index)
@@ -715,7 +721,7 @@ class PulseWatcher(PulseAudio):
                                 message))
                         self.switch_back(bridge, message)
                     continue
-            if bridge.sink.object_path == sink_path:
+            if bridge.sink.object_path == sink_path or bridge.sink in self.combined_sink_slaves:
                 if bridge.device.state == bridge.device.IDLE or \
                    bridge.device.state == bridge.device.PAUSE:
                     logger.info(
@@ -747,6 +753,16 @@ class PulseWatcher(PulseAudio):
         self.share_bridges()
         logger.info('Added the device "{name} ({flavour})".'.format(
             name=device.name, flavour=device.flavour))
+        sinks = [sink for sink in self.sinks if sink not in self.system_sinks]
+        if self.combined_sink_count:
+            if len(sinks) == int(self.combined_sink_count[0]):
+                sink = self.create_combined_sink(
+                    'combined_dlna_devices', 'Combined DLNA', sinks)
+                self.combined_sink = sink
+                self.combined_sink_slaves = sinks
+            else:
+                logger.info('Waiting for {} sinks to combine'.format(
+                    self.combined_sink_count[0]))
 
     def remove_device(self, device):
         bridge_index_to_remove = None
@@ -776,3 +792,29 @@ class PulseWatcher(PulseAudio):
                     self.update()
                     self.share_bridges()
                     break
+
+    def create_combined_sink(self, sink_name, sink_description, sinks):
+        cmd = [
+            'pactl',
+            'load-module',
+            'module-combine-sink',
+            'sink_name="{}"'.format(sink_name),
+            'sink_properties=device.description="{}"'.format(
+                sink_description.replace(' ', '\ ')
+            ),
+            'slaves="{slaves}"'.format(
+                slaves=','.join([sink.name for sink in sinks])),
+            'channel_map="left,right"',
+            'channels=2',
+        ]
+        logger.info('Create combined sinks: {}'.format(cmd))
+        module_id = int(subprocess.check_output(cmd))
+        logger.info('Create combined sinks module id {}'.format(module_id))
+        if module_id > 0:
+            self.update_sinks()
+            for sink in self.sinks:
+                if int(sink.module.index) == module_id:
+                    logger.info('create_combined_sink returning sink {}'.format(sink.name))
+                    return sink
+        else:
+            logger.info('module-combine-sink failed')
