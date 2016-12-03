@@ -212,9 +212,12 @@ class Application(object):
             fake_http_content_length=fake_http_content_length,
         )
 
+        combined_sink_with_system = False
         combined_sink_count = None
         if options['--combined-sink']:
             combined_sink_count = options['--combined-sink'].split(',')
+        if options['--combined-sink-with-system']:
+            combined_sink_with_system = True
 
         pulse = pulseaudio_dlna.pulseaudio.PulseWatcher(
             bridges, message_queue,
@@ -222,7 +225,8 @@ class Application(object):
             disable_device_stop=disable_device_stop,
             disable_auto_reconnect=disable_auto_reconnect,
             cover_mode=cover_mode,
-            combined_sink_count=combined_sink_count
+            combined_sink_count=combined_sink_count,
+            combined_sink_with_system=combined_sink_with_system,
         )
 
         device_filter = None

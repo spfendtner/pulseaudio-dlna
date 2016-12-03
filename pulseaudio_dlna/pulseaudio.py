@@ -486,7 +486,8 @@ class PulseWatcher(PulseAudio):
 
     def __init__(self, bridges_shared, message_queue, disable_switchback=False,
                  disable_device_stop=False, disable_auto_reconnect=True,
-                 cover_mode='application', combined_sink_count=None):
+                 cover_mode='application', combined_sink_count=None,
+                 combined_sink_with_system=False):
         PulseAudio.__init__(self)
 
         self.bridges = []
@@ -495,6 +496,7 @@ class PulseWatcher(PulseAudio):
         self.message_queue = message_queue
         self.blocked_devices = []
         self.combined_sink = False
+        self.combined_sink_with_system = combined_sink_with_system
         self.combined_sink_slaves = []
         self.combined_sink_count = combined_sink_count
         self.signal_timers = {}
@@ -756,6 +758,9 @@ class PulseWatcher(PulseAudio):
         sinks = [sink for sink in self.sinks if sink not in self.system_sinks]
         if self.combined_sink_count:
             if len(sinks) == int(self.combined_sink_count[0]):
+                if self.combined_sink_with_system:
+                    logger.info('Adding system sinks to combined sink')
+                    sinks += self.system_sinks
                 sink = self.create_combined_sink(
                     'combined_dlna_devices', 'Combined DLNA', sinks)
                 self.combined_sink = sink

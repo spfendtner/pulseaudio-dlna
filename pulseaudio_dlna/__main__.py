@@ -27,6 +27,7 @@ Usage:
                     [--auto-reconnect]
                     [--debug]
                     [--combined-sink=<count>]
+                    [--combined-sink-with-system]
                     [--fake-http10-content-length] [--fake-http-content-length]
                     [--disable-switchback] [--disable-ssdp-listener] [--disable-device-stop] [--disable-workarounds]
     pulseaudio-dlna [--host <host>] [--create-device-config] [--update-device-config]
@@ -84,6 +85,7 @@ Options:
     --disable-device-stop                  If set, the application won't send any stop commands to renderers at all
     --disable-workarounds                  If set, the application won't apply any device workarounds
     --combined-sink=<count>                If set, wait for count sinks to appear and then create a combined sink of all those
+    --combined-sink-with-system            If set, all local system sinks will be added to the combined DLNA sink too
     -v --version                           Show the version.
     -h --help                              Show the help.
 
