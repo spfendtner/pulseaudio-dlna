@@ -29,7 +29,7 @@ Usage:
                     [--combined-sink=<count>]
                     [--combined-sink-with-system]
                     [--fake-http10-content-length] [--fake-http-content-length]
-                    [--disable-switchback] [--disable-ssdp-listener] [--disable-device-stop] [--disable-workarounds]
+                    [--disable-switchback] [--disable-ssdp-listener] [--disable-device-stop] [--disable-workarounds] [--disable-mimetype-check]
     pulseaudio-dlna [--host <host>] [--create-device-config] [--update-device-config]
                     [--msearch-port=<msearch-port>] [--ssdp-mx <ssdp-mx>] [--ssdp-ttl <ssdp-ttl>] [--ssdp-amount <ssdp-amount>]
     pulseaudio-dlna [-h | --help | --version]
@@ -86,6 +86,7 @@ Options:
     --disable-workarounds                  If set, the application won't apply any device workarounds
     --combined-sink=<count>                If set, wait for count sinks to appear and then create a combined sink of all those
     --combined-sink-with-system            If set, all local system sinks will be added to the combined DLNA sink too
+    --disable-mimetype-check               If set, the application won't check the device's mime type capabilities
     -v --version                           Show the version.
     -h --help                              Show the help.
 

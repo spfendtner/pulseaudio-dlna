@@ -17,15 +17,15 @@
 
 from __future__ import unicode_literals
 
+from gi.repository import GObject
+
 import re
 import subprocess
 import setproctitle
 import logging
-import time
 import socket
 import select
 import sys
-import gobject
 import base64
 import urllib
 import json
@@ -40,9 +40,6 @@ import pulseaudio_dlna.codecs
 import pulseaudio_dlna.recorders
 import pulseaudio_dlna.rules
 import pulseaudio_dlna.images
-
-from pulseaudio_dlna.plugins.upnp.renderer import (
-    UpnpContentFeatures, UpnpContentFlags)
 
 logger = logging.getLogger('pulseaudio_dlna.streamserver')
 
@@ -64,7 +61,7 @@ class ProcessStream(object):
         self.chunk_size = 1024 * 4
         self.reinitialize_count = 0
 
-        gobject.timeout_add(
+        GObject.timeout_add(
             10000, self._on_regenerate_reinitialize_count)
 
     def run(self):
@@ -194,8 +191,8 @@ class StreamManager(object):
         del self.streams[stream.path][stream.id]
 
         if stream.path in self.timeouts:
-            gobject.source_remove(self.timeouts[stream.path])
-        self.timeouts[stream.path] = gobject.timeout_add(
+            GObject.source_remove(self.timeouts[stream.path])
+        self.timeouts[stream.path] = GObject.timeout_add(
             2000, self._on_disconnect, stream)
 
     def _on_disconnect(self, stream):
@@ -203,7 +200,7 @@ class StreamManager(object):
         if len(self.streams[stream.path]) == 0:
             logger.info('No more stream from device "{}".'.format(
                 stream.bridge.device.name))
-            self.server.message_queue.put({
+            self.server.pulse_queue.put({
                 'type': 'on_bridge_disconnected',
                 'stopped_bridge': stream.bridge,
             })
@@ -281,6 +278,8 @@ class StreamRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if isinstance(
                 bridge.device,
                     pulseaudio_dlna.plugins.upnp.renderer.UpnpMediaRenderer):
+                from pulseaudio_dlna.plugins.upnp.renderer import (
+                    UpnpContentFeatures, UpnpContentFlags)
                 content_features = UpnpContentFeatures(
                     flags=[
                         UpnpContentFlags.STREAMING_TRANSFER_MODE_SUPPORTED,
@@ -358,15 +357,19 @@ class StreamRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 class StreamServer(SocketServer.TCPServer):
 
+    PORT = None
+
     def __init__(
-            self, ip, port, bridges, message_queue,
-            fake_http_content_length=False, *args):
+            self, ip, port, pulse_queue, stream_queue,
+            fake_http_content_length=False, proc_title=None, *args):
         self.ip = ip
-        self.port = port
-        self.bridges = bridges
-        self.message_queue = message_queue
+        self.port = port or self.PORT
+        self.pulse_queue = pulse_queue
+        self.stream_queue = stream_queue
         self.stream_manager = StreamManager(self)
         self.fake_http_content_length = fake_http_content_length
+        self.proc_title = proc_title
+        self.bridges = []
 
     def run(self):
         self.allow_reuse_address = True
@@ -380,35 +383,50 @@ class StreamServer(SocketServer.TCPServer):
                 'cannot work properly!'.format(port=self.port))
             sys.exit(1)
 
-        setproctitle.setproctitle('stream_server')
+        signal.signal(signal.SIGTERM, self.shutdown)
+        if self.proc_title:
+            setproctitle.setproctitle(self.proc_title)
         self.serve_forever()
+
+    def update_bridges(self, bridges):
+        self.bridges = bridges
 
 
 class GobjectMainLoopMixin:
 
     def serve_forever(self, poll_interval=0.5):
-        self.mainloop = gobject.MainLoop()
+        mainloop = GObject.MainLoop()
         if hasattr(self, 'socket'):
-            gobject.io_add_watch(
-                self, gobject.IO_IN | gobject.IO_PRI, self._on_new_request)
-        context = self.mainloop.get_context()
-        while True:
-            try:
-                if context.pending():
-                    context.iteration(True)
-                else:
-                    time.sleep(0.1)
-            except KeyboardInterrupt:
-                break
+            GObject.io_add_watch(
+                self, GObject.IO_IN | GObject.IO_PRI, self._on_new_request)
+        if hasattr(self, 'stream_queue'):
+            GObject.io_add_watch(
+                self.stream_queue._reader, GObject.IO_IN | GObject.IO_PRI,
+                self._on_new_message)
+        try:
+            mainloop.run()
+        except KeyboardInterrupt:
+            self.shutdown()
+
+    def _on_new_message(self, fd, condition):
+        try:
+            message = self.stream_queue.get_nowait()
+        except:
+            return True
+
+        message_type = message.get('type', None)
+        if message_type and hasattr(self, message_type):
+            del message['type']
+            getattr(self, message_type)(**message)
+        return True
 
     def _on_new_request(self, sock, *args):
         self._handle_request_noblock()
         return True
 
     def shutdown(self, *args):
-        logger.debug(
-            'StreamServer GobjectMainLoopMixin.shutdown() pid: {}'.format(
-                os.getpid()))
+        logger.info(
+            'StreamServer GobjectMainLoopMixin.shutdown()')
         try:
             self.socket.shutdown(socket.SHUT_RDWR)
         except socket.error:

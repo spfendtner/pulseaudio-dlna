@@ -45,13 +45,14 @@ class DLNAPlugin(pulseaudio_dlna.plugins.BasePlugin):
         return UpnpMediaRendererFactory.from_xml(
             url, xml, CoinedUpnpMediaRenderer)
 
-    def discover(self, holder, ttl=None):
+    def discover(self, holder, ttl=None, host=None):
         self.holder = holder
 
         def launch_discover():
             discover = pulseaudio_dlna.plugins.upnp.ssdp.discover\
                 .SSDPDiscover(
                     cb_on_device_response=self._on_device_response,
+                    host=host,
                 )
             discover.search(ssdp_ttl=ttl)
 
@@ -59,7 +60,8 @@ class DLNAPlugin(pulseaudio_dlna.plugins.BasePlugin):
             ssdp = pulseaudio_dlna.plugins.upnp.ssdp.listener\
                 .ThreadedSSDPListener(
                     cb_on_device_alive=self._on_device_added,
-                    cb_on_device_byebye=self._on_device_removed
+                    cb_on_device_byebye=self._on_device_removed,
+                    host=host,
                 )
             ssdp.run(ttl=ttl)
 
@@ -76,7 +78,7 @@ class DLNAPlugin(pulseaudio_dlna.plugins.BasePlugin):
         except:
             traceback.print_exc()
 
-        logger.debug('DLNAPlugin.discover() quit')
+        logger.info('DLNAPlugin.discover()')
 
     @pulseaudio_dlna.plugins.BasePlugin.add_device_after
     def _on_device_response(self, header, address):
